@@ -105,13 +105,13 @@
   </head>
   <body>
     <div class="hud hidden" id="hud">Tentativas: <span id="attempts">0</span></div>
-    <div class="hint hidden" id="hint">Mire na carta e pressione espaço. No celular, segure a mira por 1 segundo.</div>
+    <div class="hint hidden" id="hint">Mire na carta e pressione espaço. No celular, pressione e segure por 1 segundo.</div>
 
     <div class="overlay" id="startScreen">
       <div class="panel">
         <h1>Jogo da Memória</h1>
         <p>Encontre os 8 pares de frutas. Mire em uma carta e selecione duas por vez.</p>
-        <p>No desktop, pressione espaço. No celular, mantenha a mira sobre a carta por 1 segundo.</p>
+        <p>No desktop, pressione espaço. No celular, mire na carta, pressione a tela e segure por 1 segundo.</p>
         <button type="button" id="startButton">Iniciar</button>
       </div>
     </div>
@@ -240,29 +240,78 @@
         const canvas = document.getElementById("cardBackCanvas");
         const ctx = canvas.getContext("2d");
 
-        ctx.fillStyle = "#243447";
-        roundedRect(ctx, 24, 24, 464, 464, 42);
+        ctx.fillStyle = "#f8f8f4";
+        roundedRect(ctx, 18, 18, 476, 476, 38);
         ctx.fill();
 
-        ctx.strokeStyle = "#f6d35f";
-        ctx.lineWidth = 12;
-        roundedRect(ctx, 30, 30, 452, 452, 36);
-        ctx.stroke();
+        ctx.fillStyle = "#b41f2a";
+        roundedRect(ctx, 38, 38, 436, 436, 26);
+        ctx.fill();
 
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
-        ctx.lineWidth = 10;
-        for (let offset = -512; offset <= 512; offset += 64) {
+        ctx.save();
+        roundedRect(ctx, 54, 54, 404, 404, 18);
+        ctx.clip();
+
+        ctx.fillStyle = "#8f1620";
+        for (let y = 48; y < 480; y += 56) {
+          for (let x = 36; x < 500; x += 56) {
+            ctx.beginPath();
+            ctx.moveTo(x + 28, y);
+            ctx.lineTo(x + 56, y + 28);
+            ctx.lineTo(x + 28, y + 56);
+            ctx.lineTo(x, y + 28);
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
+
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+        ctx.lineWidth = 4;
+        for (let offset = -512; offset <= 512; offset += 42) {
+          ctx.beginPath();
+          ctx.moveTo(offset, 0);
+          ctx.lineTo(offset + 512, 512);
+          ctx.stroke();
+
           ctx.beginPath();
           ctx.moveTo(offset, 512);
           ctx.lineTo(offset + 512, 0);
           ctx.stroke();
         }
 
-        ctx.fillStyle = "#f6d35f";
-        ctx.font = "bold 132px Arial, Helvetica, sans-serif";
+        ctx.restore();
+
+        ctx.strokeStyle = "#f8f8f4";
+        ctx.lineWidth = 10;
+        roundedRect(ctx, 50, 50, 412, 412, 20);
+        ctx.stroke();
+
+        ctx.strokeStyle = "#f8f8f4";
+        ctx.lineWidth = 5;
+        roundedRect(ctx, 78, 78, 356, 356, 12);
+        ctx.stroke();
+
+        ctx.fillStyle = "#f8f8f4";
+        ctx.beginPath();
+        ctx.ellipse(256, 256, 92, 120, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "#b41f2a";
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.ellipse(256, 256, 72, 98, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = "#b41f2a";
+        ctx.font = "bold 76px Georgia, Times New Roman, serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText("?", 256, 262);
+        ctx.fillText("♥", 256, 230);
+        ctx.fillText("♦", 256, 292);
+
+        ctx.font = "bold 44px Georgia, Times New Roman, serif";
+        ctx.fillText("♠", 78, 82);
+        ctx.fillText("♣", 434, 430);
       }
 
       function drawStarSkyTexture() {
@@ -296,6 +345,7 @@
           this.locked = false;
           this.hoveredCard = null;
           this.holdTimer = null;
+          this.mobilePressing = false;
           this.matchedCount = 0;
           this.attempts = 0;
           this.started = false;
@@ -313,7 +363,7 @@
           this.startButton = document.getElementById("startButton");
           this.restartButton = document.getElementById("restartButton");
           this.hint.textContent = this.isMobile
-            ? "Mire na carta e segure por 1 segundo."
+            ? "Mire na carta, pressione e segure por 1 segundo."
             : "Mire na carta e pressione espaço.";
 
           this.resetRound();
@@ -342,6 +392,7 @@
           this.openCards = [];
           this.locked = false;
           this.hoveredCard = null;
+          this.mobilePressing = false;
           this.matchedCount = 0;
           this.attempts = 0;
           this.deck = this.makeDeck();
@@ -425,7 +476,21 @@
             }
           });
 
-          window.addEventListener("blur", () => this.clearHold());
+          if (this.isMobile && window.PointerEvent) {
+            window.addEventListener("pointerdown", (event) => {
+              if (event.pointerType !== "mouse") {
+                this.startMobileHold(event);
+              }
+            });
+            window.addEventListener("pointerup", () => this.endMobileHold());
+            window.addEventListener("pointercancel", () => this.endMobileHold());
+          } else if (this.isMobile) {
+            window.addEventListener("touchstart", (event) => this.startMobileHold(event), { passive: false });
+            window.addEventListener("touchend", () => this.endMobileHold());
+            window.addEventListener("touchcancel", () => this.endMobileHold());
+          }
+
+          window.addEventListener("blur", () => this.endMobileHold());
         },
 
         onCardEnter(card) {
@@ -435,14 +500,6 @@
 
           this.hoveredCard = card;
           card.entity.setAttribute("scale", "1.06 1.06 1.06");
-
-          if (this.isMobile) {
-            this.clearHold();
-            this.holdTimer = window.setTimeout(() => {
-              this.trySelect(card);
-              this.clearHold();
-            }, mobileHoldMs);
-          }
         },
 
         onCardLeave(card) {
@@ -454,6 +511,29 @@
             card.entity.setAttribute("scale", "1 1 1");
           }
 
+          this.clearHold();
+        },
+
+        startMobileHold(event) {
+          if (!this.started || !this.hoveredCard) {
+            return;
+          }
+
+          event.preventDefault();
+          this.clearHold();
+          this.mobilePressing = true;
+
+          const card = this.hoveredCard;
+          this.holdTimer = window.setTimeout(() => {
+            if (this.mobilePressing && this.hoveredCard === card) {
+              this.trySelect(card);
+            }
+            this.endMobileHold();
+          }, mobileHoldMs);
+        },
+
+        endMobileHold() {
+          this.mobilePressing = false;
           this.clearHold();
         },
 
