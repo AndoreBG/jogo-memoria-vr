@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Jogo da Memória VR</title>
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #111;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      .hint {
+        position: fixed;
+        left: 50%;
+        bottom: 18px;
+        z-index: 10;
+        transform: translateX(-50%);
+        width: min(92vw, 560px);
+        padding: 10px 14px;
+        border-radius: 6px;
+        color: #f7f7f7;
+        background: rgba(0, 0, 0, 0.56);
+        text-align: center;
+        font-size: 14px;
+        line-height: 1.35;
+        pointer-events: none;
+      }
+
+      .hud {
+        position: fixed;
+        top: 14px;
+        left: 14px;
+        z-index: 10;
+        padding: 9px 12px;
+        border-radius: 6px;
+        color: #f7f7f7;
+        background: rgba(0, 0, 0, 0.6);
+        font-size: 15px;
+        line-height: 1;
+      }
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: grid;
+        place-items: center;
+        padding: 22px;
+        color: #f7f7f7;
+        background: rgba(3, 5, 12, 0.82);
+      }
+
+      .panel {
+        width: min(92vw, 420px);
+        padding: 22px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 8px;
+        background: rgba(10, 14, 24, 0.94);
+      }
+
+      .panel h1,
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      .panel p {
+        margin: 0 0 12px;
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
+      .panel button {
+        width: 100%;
+        margin-top: 8px;
+        padding: 12px 14px;
+        border: 0;
+        border-radius: 6px;
+        color: #10131a;
+        background: #f6d35f;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      @media (max-width: 720px) {
+        .hint {
+          bottom: 12px;
+          font-size: 13px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="hud hidden" id="hud">Tentativas: <span id="attempts">0</span></div>
+    <div class="hint hidden" id="hint">Mire na carta e pressione espaço. No celular, segure a mira por 1 segundo.</div>
+
+    <div class="overlay" id="startScreen">
+      <div class="panel">
+        <h1>Jogo da Memória</h1>
+        <p>Encontre os 8 pares de frutas. Mire em uma carta e selecione duas por vez.</p>
+        <p>No desktop, pressione espaço. No celular, mantenha a mira sobre a carta por 1 segundo.</p>
+        <button type="button" id="startButton">Iniciar</button>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="endScreen">
+      <div class="panel">
+        <h2>Fim de jogo</h2>
+        <p>Todos os pares foram encontrados.</p>
+        <p>Tentativas: <strong id="finalAttempts">0</strong></p>
+        <button type="button" id="restartButton">Reiniciar</button>
+      </div>
+    </div>
+
+    <a-scene
+      background="color: #20242a"
+      device-orientation-permission-ui="enabled: true"
+      renderer="antialias: true; colorManagement: true"
+      vr-mode-ui="enabled: true"
+    >
+      <a-assets>
+        <canvas id="cardBackCanvas" width="512" height="512"></canvas>
+        <canvas id="starSkyCanvas" width="2048" height="1024"></canvas>
+      </a-assets>
+
+      <a-entity id="cards"></a-entity>
+
+      <a-entity
+        id="rig"
+        position="0 1.6 0"
+      >
+        <a-camera
+          id="camera"
+          position="0 0 0"
+          look-controls="pointerLockEnabled: false; mouseEnabled: true; touchEnabled: true; magicWindowTrackingEnabled: true"
+          wasd-controls-enabled="false"
+        >
+          <a-entity
+            id="reticle"
+            cursor="fuse: false; rayOrigin: entity"
+            raycaster="objects: .memory-card; far: 9"
+            position="0 0 -1"
+            geometry="primitive: ring; radiusInner: 0.012; radiusOuter: 0.018"
+            material="color: #ffffff; shader: flat; opacity: 0.9"
+          ></a-entity>
+        </a-camera>
+      </a-entity>
+
+      <a-entity light="type: ambient; color: #ffffff; intensity: 0.78"></a-entity>
+      <a-entity light="type: directional; color: #ffffff; intensity: 0.55" position="0 4 2"></a-entity>
+
+      <a-sky material="src: #starSkyCanvas; shader: flat"></a-sky>
+
+      <a-entity
+        geometry="primitive: circle; radius: 2.4; segments: 96; thetaStart: 202.5; thetaLength: 135"
+        material="color: #0a0d14; opacity: 0.55; side: double"
+        rotation="-90 0 0"
+        position="0 0 -0.15"
+      ></a-entity>
+    </a-scene>
+
+    <script>
+      const fruits = ["🍎", "🍌", "🍇", "🍉", "🍓", "🍍", "🥝", "🍒"];
+      const cardWidth = 0.92;
+      const cardHeight = 1;
+      const arcDegrees = 135;
+      const columns = 4;
+      const rows = 4;
+      const radius = 1.32;
+      const forwardOffset = 0.95;
+      const mobileHoldMs = 1000;
+      const matchDelayMs = 850;
+
+      function isMobileDevice() {
+        return window.matchMedia("(pointer: coarse)").matches ||
+          /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      }
+
+      function shuffle(values) {
+        const result = [...values];
+        for (let index = result.length - 1; index > 0; index -= 1) {
+          const next = Math.floor(Math.random() * (index + 1));
+          [result[index], result[next]] = [result[next], result[index]];
+        }
+        return result;
+      }
+
+      function roundedRect(ctx, x, y, width, height, radiusValue) {
+        const radiusSize = Math.min(radiusValue, width / 2, height / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + radiusSize, y);
+        ctx.arcTo(x + width, y, x + width, y + height, radiusSize);
+        ctx.arcTo(x + width, y + height, x, y + height, radiusSize);
+        ctx.arcTo(x, y + height, x, y, radiusSize);
+        ctx.arcTo(x, y, x + width, y, radiusSize);
+        ctx.closePath();
+      }
+
+      function makeCardTexture(symbol) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext("2d");
+
+        ctx.fillStyle = "#f8f4ec";
+        roundedRect(ctx, 24, 24, 464, 464, 42);
+        ctx.fill();
+
+        ctx.strokeStyle = "#3a3f46";
+        ctx.lineWidth = 12;
+        roundedRect(ctx, 30, 30, 452, 452, 36);
+        ctx.stroke();
+
+        ctx.fillStyle = "#ffffff";
+        roundedRect(ctx, 70, 70, 372, 372, 32);
+        ctx.fill();
+
+        ctx.font = "260px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(symbol, 256, 272);
+
+        return canvas.toDataURL("image/png");
+      }
+
+      function drawBackTexture() {
+        const canvas = document.getElementById("cardBackCanvas");
+        const ctx = canvas.getContext("2d");
+
+        ctx.fillStyle = "#243447";
+        roundedRect(ctx, 24, 24, 464, 464, 42);
+        ctx.fill();
+
+        ctx.strokeStyle = "#f6d35f";
+        ctx.lineWidth = 12;
+        roundedRect(ctx, 30, 30, 452, 452, 36);
+        ctx.stroke();
+
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
+        ctx.lineWidth = 10;
+        for (let offset = -512; offset <= 512; offset += 64) {
+          ctx.beginPath();
+          ctx.moveTo(offset, 512);
+          ctx.lineTo(offset + 512, 0);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = "#f6d35f";
+        ctx.font = "bold 132px Arial, Helvetica, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("?", 256, 262);
+      }
+
+      function drawStarSkyTexture() {
+        const canvas = document.getElementById("starSkyCanvas");
+        const ctx = canvas.getContext("2d");
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+
+        gradient.addColorStop(0, "#050713");
+        gradient.addColorStop(0.55, "#111827");
+        gradient.addColorStop(1, "#05070c");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        for (let index = 0; index < 520; index += 1) {
+          const x = Math.random() * canvas.width;
+          const y = Math.random() * canvas.height * 0.82;
+          const radiusSize = Math.random() * 1.8 + 0.4;
+          const alpha = Math.random() * 0.65 + 0.25;
+
+          ctx.beginPath();
+          ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+          ctx.arc(x, y, radiusSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      AFRAME.registerComponent("memory-game", {
+        init() {
+          this.cards = [];
+          this.openCards = [];
+          this.locked = false;
+          this.hoveredCard = null;
+          this.holdTimer = null;
+          this.matchedCount = 0;
+          this.attempts = 0;
+          this.started = false;
+          this.isMobile = isMobileDevice();
+
+          drawBackTexture();
+          drawStarSkyTexture();
+
+          this.hud = document.getElementById("hud");
+          this.hint = document.getElementById("hint");
+          this.attemptsLabel = document.getElementById("attempts");
+          this.finalAttemptsLabel = document.getElementById("finalAttempts");
+          this.startScreen = document.getElementById("startScreen");
+          this.endScreen = document.getElementById("endScreen");
+          this.startButton = document.getElementById("startButton");
+          this.restartButton = document.getElementById("restartButton");
+          this.hint.textContent = this.isMobile
+            ? "Mire na carta e segure por 1 segundo."
+            : "Mire na carta e pressione espaço.";
+
+          this.resetRound();
+          this.bindControls();
+          this.bindButtons();
+        },
+
+        bindButtons() {
+          this.startButton.addEventListener("click", () => this.startGame());
+          this.restartButton.addEventListener("click", () => this.restartGame());
+        },
+
+        makeDeck() {
+          return shuffle([...fruits, ...fruits]).map((symbol, index) => ({
+            id: index,
+            symbol,
+            texture: makeCardTexture(symbol),
+            matched: false,
+            open: false
+          }));
+        },
+
+        resetRound() {
+          this.clearHold();
+          this.cards = [];
+          this.openCards = [];
+          this.locked = false;
+          this.hoveredCard = null;
+          this.matchedCount = 0;
+          this.attempts = 0;
+          this.deck = this.makeDeck();
+          this.updateAttempts();
+          this.buildCards();
+        },
+
+        startGame() {
+          this.started = true;
+          this.locked = false;
+          this.startScreen.classList.add("hidden");
+          this.endScreen.classList.add("hidden");
+          this.hud.classList.remove("hidden");
+          this.hint.classList.remove("hidden");
+        },
+
+        restartGame() {
+          this.resetRound();
+          this.started = true;
+          this.locked = false;
+          this.endScreen.classList.add("hidden");
+          this.hud.classList.remove("hidden");
+          this.hint.classList.remove("hidden");
+        },
+
+        finishGame() {
+          this.started = false;
+          this.locked = true;
+          this.clearHold();
+          this.finalAttemptsLabel.textContent = String(this.attempts);
+          this.hud.classList.add("hidden");
+          this.hint.classList.add("hidden");
+          this.endScreen.classList.remove("hidden");
+        },
+
+        updateAttempts() {
+          this.attemptsLabel.textContent = String(this.attempts);
+        },
+
+        buildCards() {
+          const container = document.getElementById("cards");
+          container.replaceChildren();
+          const minAngle = -arcDegrees / 2;
+          const angleStep = arcDegrees / (columns - 1);
+          const rowSpacing = 1.02;
+          const topY = 3.08;
+
+          this.deck.forEach((card, index) => {
+            const column = index % columns;
+            const row = Math.floor(index / columns);
+            const angle = minAngle + column * angleStep;
+            const angleRad = THREE.MathUtils.degToRad(angle);
+            const x = Math.sin(angleRad) * radius;
+            const z = -forwardOffset - Math.cos(angleRad) * radius;
+            const y = topY - row * rowSpacing;
+            const rotationY = THREE.MathUtils.radToDeg(Math.atan2(-x, -z));
+
+            const entity = document.createElement("a-plane");
+            entity.classList.add("memory-card");
+            entity.setAttribute("width", cardWidth);
+            entity.setAttribute("height", cardHeight);
+            entity.setAttribute("position", `${x} ${y} ${z}`);
+            entity.setAttribute("rotation", `0 ${rotationY} 0`);
+            entity.setAttribute("material", "src: #cardBackCanvas; shader: flat; side: double");
+            entity.dataset.cardId = String(card.id);
+            container.appendChild(entity);
+
+            card.entity = entity;
+            this.cards.push(card);
+
+            entity.addEventListener("mouseenter", () => this.onCardEnter(card));
+            entity.addEventListener("mouseleave", () => this.onCardLeave(card));
+          });
+        },
+
+        bindControls() {
+          window.addEventListener("keydown", (event) => {
+            if (event.code === "Space") {
+              event.preventDefault();
+              this.trySelectHovered();
+            }
+          });
+
+          window.addEventListener("blur", () => this.clearHold());
+        },
+
+        onCardEnter(card) {
+          if (!this.started) {
+            return;
+          }
+
+          this.hoveredCard = card;
+          card.entity.setAttribute("scale", "1.06 1.06 1.06");
+
+          if (this.isMobile) {
+            this.clearHold();
+            this.holdTimer = window.setTimeout(() => {
+              this.trySelect(card);
+              this.clearHold();
+            }, mobileHoldMs);
+          }
+        },
+
+        onCardLeave(card) {
+          if (this.hoveredCard === card) {
+            this.hoveredCard = null;
+          }
+
+          if (!card.matched) {
+            card.entity.setAttribute("scale", "1 1 1");
+          }
+
+          this.clearHold();
+        },
+
+        clearHold() {
+          if (this.holdTimer) {
+            window.clearTimeout(this.holdTimer);
+            this.holdTimer = null;
+          }
+        },
+
+        trySelectHovered() {
+          if (this.hoveredCard) {
+            this.trySelect(this.hoveredCard);
+          }
+        },
+
+        trySelect(card) {
+          if (!this.started || this.locked || card.open || card.matched) {
+            return;
+          }
+
+          this.reveal(card);
+          this.openCards.push(card);
+
+          if (this.openCards.length === 2) {
+            this.checkPair();
+          }
+        },
+
+        reveal(card) {
+          card.open = true;
+          card.entity.setAttribute("material", {
+            src: card.texture,
+            shader: "flat",
+            side: "double",
+            opacity: 1,
+            transparent: false
+          });
+        },
+
+        hide(card) {
+          card.open = false;
+          card.entity.setAttribute("material", {
+            src: "#cardBackCanvas",
+            shader: "flat",
+            side: "double",
+            opacity: 1,
+            transparent: false
+          });
+        },
+
+        checkPair() {
+          const [first, second] = this.openCards;
+          this.locked = true;
+          this.attempts += 1;
+          this.updateAttempts();
+
+          if (first.symbol === second.symbol) {
+            first.matched = true;
+            second.matched = true;
+            first.entity.setAttribute("material", "opacity", 0.68);
+            first.entity.setAttribute("material", "transparent", true);
+            second.entity.setAttribute("material", "opacity", 0.68);
+            second.entity.setAttribute("material", "transparent", true);
+            first.entity.setAttribute("scale", "1 1 1");
+            second.entity.setAttribute("scale", "1 1 1");
+            this.openCards = [];
+            this.locked = false;
+            this.matchedCount += 2;
+
+            if (this.matchedCount === this.cards.length) {
+              this.finishGame();
+            }
+            return;
+          }
+
+          window.setTimeout(() => {
+            this.hide(first);
+            this.hide(second);
+            this.openCards = [];
+            this.locked = false;
+          }, matchDelayMs);
+        }
+      });
+
+      document.querySelector("a-scene").setAttribute("memory-game", "");
+    </script>
+  </body>
+</html>
