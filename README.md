@@ -1,4 +1,4 @@
-# Jogo da Memória VR
+# Jogo da Memória VR 🌐 ![Static Badge](https://img.shields.io/badge/status-%20finalizado-green)
 
 Jogo da memória web feito com A-Frame, pensado para ser jogado em desktop ou mobile pelo navegador.
 
