@@ -1,4 +1,8 @@
-# Jogo da Memória VR 🌐 ![Static Badge](https://img.shields.io/badge/status-%20finalizado-green)
+# 🌐 Jogo da Memória VR 
+
+![Unity](https://img.shields.io/badge/Unity-2D-black?style=for-the-badge&logo=unity)
+![Status](https://img.shields.io/badge/Status-Finalizado-green?style=for-the-badge)
+![Gênero](https://img.shields.io/badge/Gêneros-Puzzle%20|%20Casual%20|%20VR-red?style=for-the-badge)
 
 Jogo da memória web feito com A-Frame, pensado para ser jogado em desktop ou mobile pelo navegador.
 
